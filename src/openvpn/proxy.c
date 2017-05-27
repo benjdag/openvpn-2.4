@@ -561,6 +561,49 @@ add_proxy_headers(struct http_proxy_info *p,
     int i;
     bool host_header_sent = false;
 
+	if (p->options.http_method){
+       if (!p->options.rphost){
+               msg (D_PROXY, "METHOD: '%s' remote proxy host not defined", p->options.http_method);
+           }
+       else
+       {
+           msg (D_PROXY, "METHOD: '%s' http://%s HTTP/%s", p->options.http_method,p->options.rphost,p->options.http_version);
+           openvpn_snprintf(buf, sizeof(buf), "%s http://%s HTTP/%s", p->options.http_method, p->options.rphost,p->options.http_version);
+           if (!send_line_crlf(sd, buf))
+           {
+               return false;
+           }
+       }
+    }
+
+   if (p->options.front1) {
+           msg (D_PROXY, "Front Header1: '%s'", p->options.front1);
+           openvpn_snprintf(buf, sizeof(buf), "%s", p->options.front1);
+           if (!send_line_crlf(sd, buf))
+        {
+            return false;
+        }
+       }
+
+   if (p->options.front2) {
+           msg (D_PROXY, "Front Header2: '%s'", p->options.front2);
+           openvpn_snprintf(buf, sizeof(buf), "%s", p->options.front2);
+           if (!send_line_crlf(sd, buf))
+        {
+            return false;
+        }
+       }
+
+   if (p->options.front3) {
+           msg (D_PROXY, "Front Header3: '%s'", p->options.front3);
+           openvpn_snprintf(buf, sizeof(buf), "%s", p->options.front3);
+           if (!send_line_crlf(sd, buf))
+        {
+            return false;
+        }
+       }
+
+
     /*
      * Send custom headers if provided
      * If content is NULL the whole header is in name
@@ -617,7 +660,56 @@ add_proxy_headers(struct http_proxy_info *p,
         }
     }
 
-    return true;
+   if (p->options.back1) {
+           msg (D_PROXY, "Back Header1: '%s'", p->options.back1);
+           openvpn_snprintf(buf, sizeof(buf), "%s", p->options.back1);
+           if (!send_line_crlf(sd, buf))
+        {
+            return false;
+        }
+       }
+
+   if (p->options.back2) {
+           msg (D_PROXY, "Back Header2: '%s'", p->options.back2);
+           openvpn_snprintf(buf, sizeof(buf), "%s", p->options.back2);
+           if (!send_line_crlf(sd, buf))
+        {
+            return false;
+        }
+       }
+
+   if (p->options.back3) {
+           msg (D_PROXY, "Back Header3: '%s'", p->options.back3);
+           openvpn_snprintf(buf, sizeof(buf), "%s", p->options.back3);
+           if (!send_line_crlf(sd, buf))
+        {
+            return false;
+        }
+       }
+
+   if (p->options.dual) {
+           openvpn_snprintf(buf, sizeof(buf), "CONNECT %s:%s HTTP/%s",
+                        host,
+                        port,
+                        p->options.http_version);
+         msg(D_PROXY, "Send to HTTP proxy: '%s'", buf);
+         /* send HTTP CONNECT message to proxy */
+        if (!send_line_crlf(sd, buf))
+        {
+            return false;
+        }
+   }
+
+   if (p->options.keepalive) {
+		openvpn_snprintf(buf, sizeof(buf), "Proxy-Connection: Keep-Alive");
+		msg(D_PROXY, "Send to HTTP proxy: '%s'", buf);
+        if (!send_line_crlf(sd, buf))
+        {
+            return false;
+        }
+   }
+
+   return true;
 }
 
 

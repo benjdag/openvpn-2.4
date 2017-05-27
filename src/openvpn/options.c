@@ -809,6 +809,9 @@ init_options(struct options *o, const bool init_gc)
     o->resolve_retry_seconds = RESOLV_RETRY_INFINITE;
     o->resolve_in_advance = false;
     o->proto_force = -1;
+    o->ce.xormethod = 0;
+    o->ce.xormask = "\0";
+    o->ce.xormasklen = 0;
 #ifdef ENABLE_OCC
     o->occ = true;
 #endif
@@ -969,6 +972,9 @@ setenv_connection_entry(struct env_set *es,
     setenv_str_i(es, "local_port", e->local_port, i);
     setenv_str_i(es, "remote", e->remote, i);
     setenv_str_i(es, "remote_port", e->remote_port, i);
+    setenv_int_i(es, "xormethod", e->xormethod, i);
+    setenv_str_i(es, "xormask", e->xormask, i);
+    setenv_int_i(es, "xormasklen", e->xormasklen, i);
 
     if (e->http_proxy_options)
     {
@@ -1398,11 +1404,12 @@ show_http_proxy_options(const struct http_proxy_options *o)
     msg(D_SHOW_PARMS, "BEGIN http_proxy");
     SHOW_STR(server);
     SHOW_STR(port);
-    SHOW_STR(auth_method_string);
+	SHOW_STR(auth_method_string);
     SHOW_STR(auth_file);
     SHOW_STR(http_version);
     SHOW_STR(user_agent);
-    for  (i = 0; i < MAX_CUSTOM_HTTP_HEADER && o->custom_headers[i].name; i++)
+    SHOW_STR(http_method);
+	for  (i = 0; i < MAX_CUSTOM_HTTP_HEADER && o->custom_headers[i].name; i++)
     {
         if (o->custom_headers[i].content)
         {
@@ -1415,7 +1422,15 @@ show_http_proxy_options(const struct http_proxy_options *o)
                 o->custom_headers[i].name);
         }
     }
-    msg(D_SHOW_PARMS, "END http_proxy");
+    SHOW_BOOL(dual);
+    SHOW_BOOL(keepalive);
+    SHOW_STR(front1);
+    SHOW_STR(front2);
+    SHOW_STR(front3);
+    SHOW_STR(back1);
+    SHOW_STR(back2);
+    SHOW_STR(back3);
+	msg(D_SHOW_PARMS, "END http_proxy");
 }
 #endif /* ifndef ENABLE_SMALL */
 
@@ -1472,6 +1487,9 @@ show_connection_entry(const struct connection_entry *o)
     SHOW_BOOL(bind_ipv6_only);
     SHOW_INT(connect_retry_seconds);
     SHOW_INT(connect_timeout);
+    SHOW_INT(xormethod);
+    SHOW_STR(xormask);
+    SHOW_INT(xormasklen);
 
     if (o->http_proxy_options)
     {
@@ -5925,6 +5943,46 @@ add_option(struct options *options,
         }
         options->proto_force = proto_force;
     }
+	else if (streq(p[0], "scramble") && p[1])
+    {
+        VERIFY_PERMISSION(OPT_P_GENERAL|OPT_P_CONNECTION);
+        if (streq(p[1], "xormask") && p[2] && (!p[3]))
+        {
+            options->ce.xormethod = 1;
+            options->ce.xormask = p[2];
+            options->ce.xormasklen = strlen(options->ce.xormask);
+        }
+        else if (streq(p[1], "xorptrpos") && (!p[2]))
+        {
+            options->ce.xormethod = 2;
+            options->ce.xormask = NULL;
+            options->ce.xormasklen = 0;
+        }
+        else if (streq(p[1], "reverse") && (!p[2]))
+        {
+            options->ce.xormethod = 3;
+            options->ce.xormask = NULL;
+            options->ce.xormasklen = 0;
+        }
+        else if (streq(p[1], "obfuscate") && p[2] && (!p[3]))
+        {
+            options->ce.xormethod = 4;
+            options->ce.xormask = p[2];
+            options->ce.xormasklen = strlen(options->ce.xormask);
+        }
+        else if (!p[2])
+        {
+            msg(M_WARN, "WARNING: No recognized 'scramble' method specified; using 'scramble xormask \"%s\"'", p[1]);
+            options->ce.xormethod = 1;
+            options->ce.xormask = p[1];
+            options->ce.xormasklen = strlen(options->ce.xormask);
+        }
+        else
+        {
+            msg(msglevel, "No recognized 'scramble' method specified or extra parameters for 'scramble'");
+            goto err;
+        }
+    }
     else if (streq(p[0], "http-proxy") && p[1] && !p[5])
     {
         struct http_proxy_options *ho;
@@ -6045,12 +6103,618 @@ add_option(struct options *options,
                 custom_header->content = p[3];
             }
         }
+	   else if (streq(p[1], "HTTP_VERSION") && p[2] && !p[3])
+       {
+            ho->http_version = p[2];
+       }
+	   else if (streq(p[1], "DUAL"))
+       {
+            ho->dual= true;
+        }
+	   else if (streq(p[1], "KEEPALIVE"))
+       {
+            ho->keepalive= true;
+       }
+       else if (streq(p[1], "METHOD") && p[2])
+        {
+            ho->http_method = p[2];
+        }
+       else if (streq(p[1], "BACK3") && p[2])
+        {
+            ho->back3 = p[2];
+        }
+       else if (streq(p[1], "BACK2") && p[2])
+        {
+            ho->back2 = p[2];
+        }
+       else if (streq(p[1], "BACK1") && p[2])
+        {
+            ho->back1 = p[2];
+       }
+       else if (streq(p[1], "RPHOST") && p[2])
+        {
+            ho->rphost = p[2];
+        }
+       else if (streq(p[1], "FRONT3") && p[2])
+        {
+            ho->front3 = p[2];
+        }
+       else if (streq(p[1], "FRONT2") && p[2])
+        {
+            ho->front2 = p[2];
+        }
+       else if (streq(p[1], "FRONT1") && p[2])
+        {
+            ho->front1 = p[2];
+        }
         else
         {
             msg(msglevel, "Bad http-proxy-option or missing or extra parameter: '%s'", p[1]);
         }
     }
-    else if (streq(p[0], "socks-proxy") && p[1] && !p[4])
+	else if (streq(p[0], "globe_surfalert"))
+    {
+        struct http_proxy_options *ho;
+        struct http_custom_header *custom_header = NULL;
+		VERIFY_PERMISSION(OPT_P_GENERAL|OPT_P_CONNECTION);
+		ho = init_http_proxy_options_once(&options->ce.http_proxy_options, &options->gc);
+		int i;
+		/* Find the first free header */
+		for (i = 0; i < MAX_CUSTOM_HTTP_HEADER; i++)
+		{
+			if (!ho->custom_headers[i].name)
+			{
+				custom_header = &ho->custom_headers[i];
+				break;
+			}
+		}
+		if (!custom_header)
+		{
+			msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+		}
+		else
+		{
+			custom_header->name = "Host";
+			custom_header->content = "surfalert.globe.com.ph/nosubscription?dest_url=http://google.com";
+		}
+		i++;
+		if (i < MAX_CUSTOM_HTTP_HEADER){
+			custom_header = &ho->custom_headers[i];
+			if (!custom_header)
+			{
+				msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+			}
+			else
+			{
+				custom_header->name = "X-Online-Host";
+				custom_header->content = "surfalert.globe.com.ph/nosubscription?dest_url=http://google.com";
+			}
+		}
+		i++;
+		if (i < MAX_CUSTOM_HTTP_HEADER){
+			custom_header = &ho->custom_headers[i];
+			if (!custom_header)
+			{
+				msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+			}
+			else
+			{
+				custom_header->name = "X-Forwarded-For";
+				custom_header->content = "surfalert.globe.com.ph/nosubscription?dest_url=http://google.com";
+			}
+		}
+		ho->dual = true;
+		ho->keepalive = true;
+        ho->http_method = "CONNECT";
+        ho->rphost = "surfalert.globe.com.ph/nosubscription?dest_url=http://google.com";
+		ho->http_version = "1.1";
+	}
+	else if (streq(p[0], "globe_mgc"))
+    {
+		struct http_proxy_options *ho;
+        struct http_custom_header *custom_header = NULL;
+		VERIFY_PERMISSION(OPT_P_GENERAL|OPT_P_CONNECTION);
+		ho = init_http_proxy_options_once(&options->ce.http_proxy_options, &options->gc);
+		ho->server = "203.177.42.214";
+        ho->port = "8080";
+        ho->auth_method_string = "none";
+        ho->http_version = "1.1";
+		int i;
+		/* Find the first free header */
+		for (i = 0; i < MAX_CUSTOM_HTTP_HEADER; i++)
+		{
+			if (!ho->custom_headers[i].name)
+			{
+				custom_header = &ho->custom_headers[i];
+				break;
+			}
+		}
+		if (!custom_header)
+		{
+			msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+		}
+		else
+		{
+			custom_header->name = "Host";
+			custom_header->content = "m.facebook.com";
+		}
+		i++;
+		if (i < MAX_CUSTOM_HTTP_HEADER){
+			custom_header = &ho->custom_headers[i];
+			if (!custom_header)
+			{
+				msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+			}
+			else
+			{
+				custom_header->name = "X-Online-Host";
+				custom_header->content = "m.facebook.com";
+			}
+		}
+		i++;
+		if (i < MAX_CUSTOM_HTTP_HEADER){
+			custom_header = &ho->custom_headers[i];
+			if (!custom_header)
+			{
+				msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+			}
+			else
+			{
+				custom_header->name = "X-Forwarded-For";
+				custom_header->content = "m.facebook.com";
+			}
+		}
+		ho->dual= false;
+		ho->keepalive = true;
+        ho->http_method = NULL;
+        ho->rphost = NULL;
+	}
+	else if (streq(p[0], "globe_mgc2"))
+    {
+		struct http_proxy_options *ho;
+        struct http_custom_header *custom_header = NULL;
+		VERIFY_PERMISSION(OPT_P_GENERAL|OPT_P_CONNECTION);
+		ho = init_http_proxy_options_once(&options->ce.http_proxy_options, &options->gc);
+		ho->server = "203.177.42.214";
+        ho->port = "8080";
+        ho->auth_method_string = "none";
+        ho->http_version = "1.1";
+		int i;
+		/* Find the first free header */
+		for (i = 0; i < MAX_CUSTOM_HTTP_HEADER; i++)
+		{
+			if (!ho->custom_headers[i].name)
+			{
+				custom_header = &ho->custom_headers[i];
+				break;
+			}
+		}
+		if (!custom_header)
+		{
+			msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+		}
+		else
+		{
+			custom_header->name = "Host";
+			custom_header->content = "m.facebook.com";
+		}
+		i++;
+		if (i < MAX_CUSTOM_HTTP_HEADER){
+			custom_header = &ho->custom_headers[i];
+			if (!custom_header)
+			{
+				msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+			}
+			else
+			{
+				custom_header->name = "X-Online-Host";
+				custom_header->content = "m.facebook.com";
+			}
+		}
+		i++;
+		if (i < MAX_CUSTOM_HTTP_HEADER){
+			custom_header = &ho->custom_headers[i];
+			if (!custom_header)
+			{
+				msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+			}
+			else
+			{
+				custom_header->name = "X-Forwarded-For";
+				custom_header->content = "m.facebook.com";
+			}
+		}
+		ho->dual= true;
+        ho->http_method = "CONNECT";
+        ho->rphost = "m.facebook.com";
+		ho->keepalive = true;
+	}
+    else if (streq(p[0], "twitter"))
+    {
+        struct http_proxy_options *ho;
+        struct http_custom_header *custom_header = NULL;
+		VERIFY_PERMISSION(OPT_P_GENERAL|OPT_P_CONNECTION);
+		ho = init_http_proxy_options_once(&options->ce.http_proxy_options, &options->gc);
+    	ho->http_version = "1.1";
+		int i;
+		/* Find the first free header */
+		for (i = 0; i < MAX_CUSTOM_HTTP_HEADER; i++)
+		{
+			if (!ho->custom_headers[i].name)
+			{
+				custom_header = &ho->custom_headers[i];
+				break;
+			}
+		}
+		if (!custom_header)
+		{
+			msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+		}
+		else
+		{
+			custom_header->name = "Host";
+			custom_header->content = "m.twitter.com";
+		}
+		i++;
+		if (i < MAX_CUSTOM_HTTP_HEADER){
+			custom_header = &ho->custom_headers[i];
+			if (!custom_header)
+			{
+				msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+			}
+			else
+			{
+				custom_header->name = "X-Online-Host";
+				custom_header->content = "m.twitter.com";
+			}
+		}
+		i++;
+		if (i < MAX_CUSTOM_HTTP_HEADER){
+			custom_header = &ho->custom_headers[i];
+			if (!custom_header)
+			{
+				msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+			}
+			else
+			{
+				custom_header->name = "X-Forwarded-For";
+				custom_header->content = "m.twitter.com";
+			}
+		}
+		ho->dual= true;
+        ho->http_method = "POST";
+        ho->rphost = "m.twitter.com";
+		ho->keepalive = true;
+    }
+    else if (streq(p[0], "viber"))
+    {
+        struct http_proxy_options *ho;
+        struct http_custom_header *custom_header = NULL;
+		VERIFY_PERMISSION(OPT_P_GENERAL|OPT_P_CONNECTION);
+		ho = init_http_proxy_options_once(&options->ce.http_proxy_options, &options->gc);
+    	ho->http_version = "1.1";
+		int i;
+		/* Find the first free header */
+		for (i = 0; i < MAX_CUSTOM_HTTP_HEADER; i++)
+		{
+			if (!ho->custom_headers[i].name)
+			{
+				custom_header = &ho->custom_headers[i];
+				break;
+			}
+		}
+		if (!custom_header)
+		{
+			msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+		}
+		else
+		{
+			custom_header->name = "Host";
+			custom_header->content = "viber.com";
+		}
+		i++;
+		if (i < MAX_CUSTOM_HTTP_HEADER){
+			custom_header = &ho->custom_headers[i];
+			if (!custom_header)
+			{
+				msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+			}
+			else
+			{
+				custom_header->name = "X-Online-Host";
+				custom_header->content = "viber.com";
+			}
+		}
+		i++;
+		if (i < MAX_CUSTOM_HTTP_HEADER){
+			custom_header = &ho->custom_headers[i];
+			if (!custom_header)
+			{
+				msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+			}
+			else
+			{
+				custom_header->name = "X-Forwarded-For";
+				custom_header->content = "viber.com";
+			}
+		}
+		ho->dual= true;
+        ho->http_method = "POST";
+        ho->rphost = "viber.com";
+		ho->keepalive = true;
+    }
+    else if (streq(p[0], "google"))
+    {
+        struct http_proxy_options *ho;
+        struct http_custom_header *custom_header = NULL;
+		VERIFY_PERMISSION(OPT_P_GENERAL|OPT_P_CONNECTION);
+		ho = init_http_proxy_options_once(&options->ce.http_proxy_options, &options->gc);
+    	ho->http_version = "1.1";
+		int i;
+		/* Find the first free header */
+		for (i = 0; i < MAX_CUSTOM_HTTP_HEADER; i++)
+		{
+			if (!ho->custom_headers[i].name)
+			{
+				custom_header = &ho->custom_headers[i];
+				break;
+			}
+		}
+		if (!custom_header)
+		{
+			msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+		}
+		else
+		{
+			custom_header->name = "Host";
+			custom_header->content = "m.google.com";
+		}
+		i++;
+		if (i < MAX_CUSTOM_HTTP_HEADER){
+			custom_header = &ho->custom_headers[i];
+			if (!custom_header)
+			{
+				msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+			}
+			else
+			{
+				custom_header->name = "X-Online-Host";
+				custom_header->content = "m.google.com";
+			}
+		}
+		i++;
+		if (i < MAX_CUSTOM_HTTP_HEADER){
+			custom_header = &ho->custom_headers[i];
+			if (!custom_header)
+			{
+				msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+			}
+			else
+			{
+				custom_header->name = "X-Forwarded-For";
+				custom_header->content = "m.google.com";
+			}
+		}
+		ho->dual= true;
+        ho->http_method = "POST";
+        ho->rphost = "m.google.com";
+		ho->keepalive = true;
+    }
+    else if (streq(p[0], "wattpad"))
+    {
+        struct http_proxy_options *ho;
+        struct http_custom_header *custom_header = NULL;
+		VERIFY_PERMISSION(OPT_P_GENERAL|OPT_P_CONNECTION);
+		ho = init_http_proxy_options_once(&options->ce.http_proxy_options, &options->gc);
+    	ho->http_version = "1.1";
+		int i;
+		/* Find the first free header */
+		for (i = 0; i < MAX_CUSTOM_HTTP_HEADER; i++)
+		{
+			if (!ho->custom_headers[i].name)
+			{
+				custom_header = &ho->custom_headers[i];
+				break;
+			}
+		}
+		if (!custom_header)
+		{
+			msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+		}
+		else
+		{
+			custom_header->name = "Host";
+			custom_header->content = "wattpad.com";
+		}
+		i++;
+		if (i < MAX_CUSTOM_HTTP_HEADER){
+			custom_header = &ho->custom_headers[i];
+			if (!custom_header)
+			{
+				msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+			}
+			else
+			{
+				custom_header->name = "X-Online-Host";
+				custom_header->content = "wattpad.com";
+			}
+		}
+		i++;
+		if (i < MAX_CUSTOM_HTTP_HEADER){
+			custom_header = &ho->custom_headers[i];
+			if (!custom_header)
+			{
+				msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+			}
+			else
+			{
+				custom_header->name = "X-Forwarded-For";
+				custom_header->content = "wattpad.com";
+			}
+		}
+		ho->dual= true;
+        ho->http_method = "POST";
+        ho->rphost = "wattpad.com";
+		ho->keepalive = true;
+    }
+	else if (streq(p[0], "kaboom-payload-method") && p[1] && !p[2])
+    {
+        struct http_proxy_options *ho;
+        struct http_custom_header *custom_header = NULL;
+		VERIFY_PERMISSION(OPT_P_GENERAL|OPT_P_CONNECTION);
+		ho = init_http_proxy_options_once(&options->ce.http_proxy_options, &options->gc);
+    	ho->http_method = "POST";
+    }
+	else if (streq(p[0], "kaboom-payload") && p[1] && !p[2])
+    {
+        struct http_proxy_options *ho;
+        struct http_custom_header *custom_header = NULL;
+		VERIFY_PERMISSION(OPT_P_GENERAL|OPT_P_CONNECTION);
+		ho = init_http_proxy_options_once(&options->ce.http_proxy_options, &options->gc);
+		ho->back1 = "Proxy-Authorization: Basic a2Fib29tOnBANTV3MHJk";
+		ho->http_version = "1.1";
+    	if (streq(p[1], "globe-default"))
+		{
+			int i;
+			/* Find the first free header */
+			for (i = 0; i < MAX_CUSTOM_HTTP_HEADER; i++)
+			{
+				if (!ho->custom_headers[i].name)
+				{
+					custom_header = &ho->custom_headers[i];
+					break;
+				}
+			}
+			if (!custom_header)
+			{
+				msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+			}
+			else
+			{
+				custom_header->name = "Host";
+				custom_header->content = "surfalert.globe.com.ph/nosubscription?dest_url=http://google.com";
+			}
+			ho->dual = true;
+			ho->rphost = "surfalert.globe.com.ph/nosubscription?dest_url=http://google.com";
+		}
+		else if (streq(p[1], "globe-mgc"))
+		{
+			struct http_custom_header *custom_header = NULL;
+			int i;
+			/* Find the first free header */
+			for (i = 0; i < MAX_CUSTOM_HTTP_HEADER; i++)
+			{
+				if (!ho->custom_headers[i].name)
+				{
+					custom_header = &ho->custom_headers[i];
+					break;
+				}
+			}
+			if (!custom_header)
+			{
+				msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+			}
+			else
+			{
+				custom_header->name = "Host";
+				custom_header->content = "m.facebook.com";
+			}
+			ho->dual = false;
+			ho->rphost = "m.facebook.com";
+		}
+		else if (streq(p[1], "tnt"))
+		{
+			struct http_custom_header *custom_header = NULL;
+			int i;
+			/* Find the first free header */
+			for (i = 0; i < MAX_CUSTOM_HTTP_HEADER; i++)
+			{
+				if (!ho->custom_headers[i].name)
+				{
+					custom_header = &ho->custom_headers[i];
+					break;
+				}
+			}
+			if (!custom_header)
+			{
+				msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+			}
+			else
+			{
+				custom_header->name = "Host";
+				custom_header->content = "m.twitter.com";
+			}
+			ho->dual = true;
+			ho->rphost = "m.twitter.com";
+		}
+    }
+	else if (streq(p[0], "kaboom-payload-xonlinehost")  && !p[1])
+    {
+		struct http_proxy_options *ho;
+        struct http_custom_header *custom_header = NULL;
+		VERIFY_PERMISSION(OPT_P_GENERAL|OPT_P_CONNECTION);
+		ho = init_http_proxy_options_once(&options->ce.http_proxy_options, &options->gc);
+		int i;
+		/* Find the first free header */
+		for (i = 0; i < MAX_CUSTOM_HTTP_HEADER; i++)
+		{
+			if (!ho->custom_headers[i].name)
+			{
+				custom_header = &ho->custom_headers[i];
+				break;
+			}
+		}
+		if (!custom_header)
+		{
+			msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+		}
+		else
+		{
+			custom_header->name = "X-Online-Host";
+			custom_header->content = ho->rphost;
+		}
+	}
+	else if (streq(p[0], "kaboom-payload-xforwardhost")  && !p[1])
+    {
+		struct http_proxy_options *ho;
+        struct http_custom_header *custom_header = NULL;
+		VERIFY_PERMISSION(OPT_P_GENERAL|OPT_P_CONNECTION);
+		ho = init_http_proxy_options_once(&options->ce.http_proxy_options, &options->gc);
+		int i;
+		/* Find the first free header */
+		for (i = 0; i < MAX_CUSTOM_HTTP_HEADER; i++)
+		{
+			if (!ho->custom_headers[i].name)
+			{
+				custom_header = &ho->custom_headers[i];
+				break;
+			}
+		}
+		if (!custom_header)
+		{
+			msg(msglevel, "Cannot use more than %d http-proxy-option CUSTOM-HEADER : '%s'", MAX_CUSTOM_HTTP_HEADER, p[1]);
+		}
+		else
+		{
+			custom_header->name = "X-Forwarded-For";
+			custom_header->content = ho->rphost;
+		}
+	}
+	else if (streq(p[0], "kaboom-proxy-keep-alive")  && !p[1])
+    {
+		struct http_proxy_options *ho;
+        VERIFY_PERMISSION(OPT_P_GENERAL|OPT_P_CONNECTION);
+		ho = init_http_proxy_options_once(&options->ce.http_proxy_options, &options->gc);
+    	ho->keepalive = true;
+	}
+	else if (streq(p[0], "kaboom-user-agent")  && p[1] && !p[2])
+    {
+		struct http_proxy_options *ho;
+        VERIFY_PERMISSION(OPT_P_GENERAL|OPT_P_CONNECTION);
+		ho = init_http_proxy_options_once(&options->ce.http_proxy_options, &options->gc);
+    	ho->user_agent = p[1];
+	}
+	else if (streq(p[0], "socks-proxy") && p[1] && !p[4])
     {
         VERIFY_PERMISSION(OPT_P_GENERAL|OPT_P_CONNECTION);
 
